@@ -1,0 +1,578 @@
+openapi: 3.0.3
+info:
+  title: Plataforma de Subastas en Línea — API
+  version: "1.0.0-entrega1"
+  description: >
+    API REST de la Entrega 1. Cubre la gestión de usuarios, la publicación y
+    consulta de subastas y el registro de pujas. La comunicación en tiempo real
+    y el webhook de pagos corresponden a entregas posteriores.
+
+    Los valores monetarios son enteros no negativos en pesos colombianos. Las
+    reglas de negocio se validan en el dominio: una puja rechazada por una regla
+    de negocio nunca responde con un código de éxito.
+servers:
+  - url: http://localhost:3000
+    description: Entorno local
+
+tags:
+  - name: Salud
+  - name: Categorías
+  - name: Usuarios
+  - name: Subastas
+  - name: Pujas
+
+paths:
+  /salud:
+    get:
+      tags: [Salud]
+      summary: Verificación de vida del servicio
+      security: []
+      responses:
+        "200":
+          description: El servicio está operativo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estado:
+                    type: string
+                    example: ok
+
+  /categorias:
+    get:
+      tags: [Categorías]
+      summary: Catálogo de categorías (datos semilla)
+      security: []
+      responses:
+        "200":
+          description: Listado de categorías
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Categoria"
+
+  /usuarios/registro:
+    post:
+      tags: [Usuarios]
+      summary: Registrar un usuario
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombre, correo, contrasena]
+              properties:
+                nombre:
+                  type: string
+                  example: Ana Pérez
+                correo:
+                  type: string
+                  format: email
+                  example: ana@correo.com
+                contrasena:
+                  type: string
+                  format: password
+                  example: clave-secreta
+      responses:
+        "201":
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Usuario"
+        "400":
+          $ref: "#/components/responses/EntradaInvalida"
+        "409":
+          description: El correo ya está registrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /usuarios/login:
+    post:
+      tags: [Usuarios]
+      summary: Iniciar sesión y obtener un token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [correo, contrasena]
+              properties:
+                correo:
+                  type: string
+                  format: email
+                  example: ana@correo.com
+                contrasena:
+                  type: string
+                  format: password
+                  example: clave-secreta
+      responses:
+        "200":
+          description: Sesión iniciada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  usuarioId:
+                    type: string
+                  nombre:
+                    type: string
+        "400":
+          $ref: "#/components/responses/EntradaInvalida"
+        "401":
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /usuarios/perfil:
+    get:
+      tags: [Usuarios]
+      summary: Perfil del usuario autenticado con sus subastas
+      responses:
+        "200":
+          description: Perfil del usuario
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  usuario:
+                    $ref: "#/components/schemas/Usuario"
+                  subastasPublicadas:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Subasta"
+                  subastasConParticipacion:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Subasta"
+        "401":
+          $ref: "#/components/responses/NoAutenticado"
+
+  /usuarios/notificaciones:
+    get:
+      tags: [Usuarios]
+      summary: Avisos dirigidos al usuario autenticado
+      description: >
+        Devuelve las notificaciones generadas para el usuario autenticado,
+        ordenadas de la más reciente a la más antigua (por ejemplo, haber
+        sido superado en una puja o haber ganado una subasta).
+      responses:
+        "200":
+          description: Listado de notificaciones del usuario
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notificacion"
+        "401":
+          $ref: "#/components/responses/NoAutenticado"
+
+  /subastas:
+    get:
+      tags: [Subastas]
+      summary: Listar subastas con filtros y paginación
+      security: []
+      parameters:
+        - in: query
+          name: categoriaId
+          schema:
+            type: string
+        - in: query
+          name: estado
+          schema:
+            $ref: "#/components/schemas/EstadoSubasta"
+        - in: query
+          name: pagina
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: tamanoPagina
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+      responses:
+        "200":
+          description: Página de subastas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  subastas:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Subasta"
+    post:
+      tags: [Subastas]
+      summary: Publicar una subasta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                [denominacion, descripcion, estadoConservacion, categoriaId, precioBase, incrementoMinimo, fechaCierre]
+              properties:
+                denominacion:
+                  type: string
+                  example: Reloj de bolsillo antiguo
+                descripcion:
+                  type: string
+                  example: Pieza de colección en buen estado de conservación
+                estadoConservacion:
+                  $ref: "#/components/schemas/EstadoConservacion"
+                categoriaId:
+                  type: string
+                precioBase:
+                  type: integer
+                  minimum: 1
+                  example: 100000
+                incrementoMinimo:
+                  type: integer
+                  minimum: 1
+                  example: 10000
+                fechaCierre:
+                  type: string
+                  format: date-time
+                  description: >
+                    Posterior al momento de publicación; la duración debe estar
+                    entre una hora y treinta días.
+      responses:
+        "201":
+          description: Subasta publicada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subasta"
+        "400":
+          description: >
+            Datos con formato inválido, o alguna condición de publicación no
+            se cumple (precio base o incremento no positivo, fecha de cierre
+            anterior a la publicación, duración fuera de rango).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/NoAutenticado"
+        "404":
+          description: La categoría indicada no existe
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /subastas/{id}:
+    get:
+      tags: [Subastas]
+      summary: Detalle de una subasta con su historial de pujas
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/SubastaId"
+      responses:
+        "200":
+          description: Detalle de la subasta
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Subasta"
+                  - type: object
+                    properties:
+                      historialPujas:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Puja"
+        "404":
+          $ref: "#/components/responses/NoEncontrado"
+    delete:
+      tags: [Subastas]
+      summary: Cancelar una subasta sin pujas
+      description: >
+        Solo el vendedor puede cancelar, y únicamente mientras la subasta no
+        haya recibido ninguna puja.
+      parameters:
+        - $ref: "#/components/parameters/SubastaId"
+      responses:
+        "204":
+          description: Subasta cancelada
+        "401":
+          $ref: "#/components/responses/NoAutenticado"
+        "403":
+          description: Quien solicita no es el vendedor de la subasta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NoEncontrado"
+        "409":
+          description: La subasta ya recibió pujas o no está abierta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /subastas/{id}/pujas:
+    post:
+      tags: [Pujas]
+      summary: Registrar una puja sobre una subasta abierta
+      description: >
+        El dominio decide si la puja procede. Un rechazo por regla de negocio
+        se responde con 4xx e incluye el código y el motivo; el intento queda
+        registrado para auditoría.
+      parameters:
+        - $ref: "#/components/parameters/SubastaId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [monto]
+              properties:
+                monto:
+                  type: integer
+                  minimum: 0
+                  example: 110000
+      responses:
+        "201":
+          description: Puja aceptada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Puja"
+        "400":
+          description: Formato inválido, o monto no entero o negativo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/NoAutenticado"
+        "403":
+          description: El vendedor no puede pujar por su propio artículo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NoEncontrado"
+        "409":
+          description: La subasta no está abierta, o el usuario ya es el mejor postor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: La puja no alcanza el precio base o el incremento mínimo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    tokenPortador:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SubastaId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+
+  responses:
+    EntradaInvalida:
+      description: Los datos enviados no tienen el formato esperado
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NoAutenticado:
+      description: Falta el token de sesión o es inválido
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NoEncontrado:
+      description: El recurso solicitado no existe
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            codigo:
+              type: string
+              description: Código identificable del error
+              example: RN09_PUJA_INSUFICIENTE
+            mensaje:
+              type: string
+              example: La puja debe superar la oferta vigente en al menos el incremento mínimo.
+            detalles:
+              type: object
+              additionalProperties: true
+              description: Presente solo en errores de validación de formato
+
+    Categoria:
+      type: object
+      properties:
+        id:
+          type: string
+        nombre:
+          type: string
+
+    Usuario:
+      type: object
+      description: No incluye la contraseña ni datos de contacto de terceros
+      properties:
+        id:
+          type: string
+        nombre:
+          type: string
+        correo:
+          type: string
+          format: email
+
+    Notificacion:
+      type: object
+      description: >
+        Aviso dirigido al usuario autenticado, derivado de un hecho de
+        negocio (por ejemplo, haber sido superado en una puja).
+      properties:
+        id:
+          type: string
+        tipo:
+          type: string
+          enum:
+            [
+              PUJA_SUPERADA,
+              SUBASTA_ADJUDICADA_GANADOR,
+              SUBASTA_ADJUDICADA_VENDEDOR,
+              SUBASTA_DESIERTA,
+            ]
+        subastaId:
+          type: string
+        mensaje:
+          type: string
+        fecha:
+          type: string
+          format: date-time
+
+    EstadoConservacion:
+      type: string
+      enum: [NUEVO, COMO_NUEVO, BUEN_ESTADO, ACEPTABLE, PARA_REPARAR]
+
+    EstadoSubasta:
+      type: string
+      enum: [ABIERTA, CANCELADA, ADJUDICADA, DESIERTA]
+
+    Articulo:
+      type: object
+      properties:
+        denominacion:
+          type: string
+        descripcion:
+          type: string
+        estadoConservacion:
+          $ref: "#/components/schemas/EstadoConservacion"
+        categoriaId:
+          type: string
+
+    Puja:
+      type: object
+      properties:
+        id:
+          type: string
+        postorId:
+          type: string
+        monto:
+          type: integer
+        fecha:
+          type: string
+          format: date-time
+
+    OrdenPago:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+        ganadorId:
+          type: string
+        monto:
+          type: integer
+        fechaLimite:
+          type: string
+          format: date-time
+        estado:
+          type: string
+          enum: [PENDIENTE, CONFIRMADA, VENCIDA]
+
+    Subasta:
+      type: object
+      properties:
+        id:
+          type: string
+        vendedorId:
+          type: string
+        articulo:
+          $ref: "#/components/schemas/Articulo"
+        precioBase:
+          type: integer
+        incrementoMinimo:
+          type: integer
+        fechaPublicacion:
+          type: string
+          format: date-time
+        fechaCierre:
+          type: string
+          format: date-time
+        estado:
+          $ref: "#/components/schemas/EstadoSubasta"
+        ofertaVigente:
+          type: integer
+          nullable: true
+        mejorPostorId:
+          type: string
+          nullable: true
+        cantidadPujas:
+          type: integer
+        ordenPago:
+          $ref: "#/components/schemas/OrdenPago"
+
+security:
+  - tokenPortador: []

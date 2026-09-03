@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Artefactos de compilación de las pruebas (se ejecutan con ts-jest, nunca
+# se versiona el JavaScript generado).
+test/**/*.js
+test/**/*.js.map
