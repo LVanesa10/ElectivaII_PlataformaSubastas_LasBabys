@@ -19,6 +19,15 @@ export class SubastaRepositorioMemoria implements SubastaRepositorio {
     return this.subastasPorId.get(id) ?? null;
   }
 
+  async buscarPorOrdenPago(ordenPagoId: string): Promise<Subasta | null> {
+    for (const subasta of this.subastasPorId.values()) {
+      if (subasta.ordenDePago?.identificador === ordenPagoId) {
+        return subasta;
+      }
+    }
+    return null;
+  }
+
   async listar(filtros: FiltrosListadoSubastas): Promise<ResultadoListadoSubastas> {
     let subastas = [...this.subastasPorId.values()];
 
@@ -45,6 +54,21 @@ export class SubastaRepositorioMemoria implements SubastaRepositorio {
   async listarConParticipacionDe(usuarioId: string): Promise<Subasta[]> {
     return [...this.subastasPorId.values()].filter((s) =>
       s.historialPujas.some((p) => p.idPostor === usuarioId),
+    );
+  }
+
+  async listarGanadasPor(usuarioId: string): Promise<Subasta[]> {
+    return [...this.subastasPorId.values()].filter((s) => s.ordenDePago?.idGanador === usuarioId);
+  }
+
+  async listarConPlazoCumplido(ahora: Date): Promise<Subasta[]> {
+    return [...this.subastasPorId.values()].filter(
+      (s) =>
+        (s.estadoActual.esAbierta() && s.fechaDeCierre.getTime() <= ahora.getTime()) ||
+        (s.estadoActual.esAdjudicada() &&
+          s.ordenDePago !== undefined &&
+          s.ordenDePago.estaPendiente() &&
+          s.ordenDePago.fechaLimite.getTime() < ahora.getTime()),
     );
   }
 
