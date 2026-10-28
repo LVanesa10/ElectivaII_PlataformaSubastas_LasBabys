@@ -3,6 +3,7 @@ import { Usuario } from '../../dominio/entidades/Usuario';
 import { Puja } from '../../dominio/entidades/Puja';
 import { Categoria } from '../../dominio/entidades/Categoria';
 import { Notificacion } from '../../dominio/entidades/Notificacion';
+import { OrdenPago } from '../../dominio/entidades/OrdenPago';
 
 export function presentarPuja(puja: Puja) {
   return {
@@ -36,6 +37,7 @@ export function presentarSubasta(subasta: Subasta, opciones: { incluirHistorial?
           id: subasta.ordenDePago.identificador,
           ganadorId: subasta.ordenDePago.idGanador,
           monto: subasta.ordenDePago.valor.valor,
+          fechaGeneracion: subasta.ordenDePago.fechaDeGeneracion.toISOString(),
           fechaLimite: subasta.ordenDePago.fechaLimite.toISOString(),
           estado: subasta.ordenDePago.estadoActual,
         }
@@ -75,5 +77,20 @@ export function presentarNotificacion(notificacion: Notificacion) {
     subastaId: notificacion.idSubasta,
     mensaje: notificacion.texto,
     fecha: notificacion.fechaGeneracion.toISOString(),
+  };
+}
+
+export function presentarOrdenPago(orden: OrdenPago, subasta: Subasta) {
+  return {
+    id: orden.identificador,
+    subastaId: orden.idSubasta,
+    articulo: subasta.datosArticulo.nombreDenominacion,
+    ganadorId: orden.idGanador,
+    vendedorId: subasta.idVendedor,
+    monto: orden.valor.valor,
+    fechaGeneracion: orden.fechaDeGeneracion.toISOString(),
+    fechaLimite: orden.fechaLimite.toISOString(),
+    estado: orden.estadoActual,
+    estadoSubasta: subasta.estadoActual.valor,
   };
 }
