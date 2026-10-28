@@ -156,3 +156,38 @@ export class DatosUsuarioInvalidosError extends ErrorDeDominio {
     super(mensaje);
   }
 }
+
+export class EstadoSubastaInvalidoError extends ErrorDeDominio {
+  readonly codigo = 'ESTADO_SUBASTA_INVALIDO';
+  constructor(nombre: string, validos: string[]) {
+    super(`El estado de subasta "${nombre}" no existe. Estados válidos: ${validos.join(', ')}.`);
+  }
+}
+
+export class OrdenPagoNoEncontradaError extends ErrorDeDominio {
+  readonly codigo = 'ORDEN_PAGO_NO_ENCONTRADA';
+  constructor() {
+    super('La orden de pago indicada no existe.');
+  }
+}
+
+export class OrdenPagoNoPendienteError extends ErrorDeDominio {
+  readonly codigo = 'RN20_ORDEN_PAGO_NO_PENDIENTE';
+  constructor(estadoActual: string) {
+    super(`La orden de pago ya no admite cambios porque su estado actual es "${estadoActual}".`);
+  }
+}
+
+export class NotificacionPagoNoVerificableError extends ErrorDeDominio {
+  readonly codigo = 'RN18_NOTIFICACION_NO_VERIFICABLE';
+  constructor() {
+    super('No fue posible verificar que la notificación de pago provenga de la pasarela.');
+  }
+}
+
+export class NotificacionPagoMalFormadaError extends ErrorDeDominio {
+  readonly codigo = 'NOTIFICACION_PAGO_MAL_FORMADA';
+  constructor(detalle: string) {
+    super(`La notificación de pago no cumple el contrato esperado: ${detalle}`);
+  }
+}

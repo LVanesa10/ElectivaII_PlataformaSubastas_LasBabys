@@ -1,12 +1,14 @@
 import { Dinero } from '../../src/dominio/objetos-valor/Dinero';
 import { Email } from '../../src/dominio/objetos-valor/Email';
 import { Articulo } from '../../src/dominio/objetos-valor/Articulo';
+import { EstadoSubasta } from '../../src/dominio/objetos-valor/EstadoSubasta';
 import { Usuario } from '../../src/dominio/entidades/Usuario';
 import {
   MontoMonetarioInvalidoError,
   EmailInvalidoError,
   DatosArticuloInvalidosError,
   DatosUsuarioInvalidosError,
+  EstadoSubastaInvalidoError,
 } from '../../src/dominio/errores/ErrorDeDominio';
 
 describe('Dinero', () => {
@@ -59,5 +61,15 @@ describe('Validaciones de dominio con error tipado', () => {
     const registrar = () =>
       Usuario.registrar({ id: 'u1', nombre: '   ', correo: Email.crear('a@b.com'), contrasenaCifrada: 'hash' });
     expect(registrar).toThrow(DatosUsuarioInvalidosError);
+  });
+});
+
+describe('EstadoSubasta', () => {
+  test('se reconstruye a partir de un nombre válido', () => {
+    expect(EstadoSubasta.desdeNombre('INCUMPLIDA')).toBe(EstadoSubasta.incumplida());
+  });
+
+  test('rechaza un nombre de estado desconocido', () => {
+    expect(() => EstadoSubasta.desdeNombre('VENDIDA')).toThrow(EstadoSubastaInvalidoError);
   });
 });

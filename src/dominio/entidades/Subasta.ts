@@ -5,6 +5,7 @@ import { PeriodoSubasta } from '../objetos-valor/PeriodoSubasta';
 import { Puja } from './Puja';
 import { IntentoPujaRechazado } from './IntentoPujaRechazado';
 import { OrdenPago } from './OrdenPago';
+import { ResultadoCobro } from './EventoPago';
 import { EventoDeDominio } from '../eventos/EventoDeDominio';
 import {
   ErrorDeDominio,
@@ -18,6 +19,8 @@ import {
   PujaInsuficienteError,
   UsuarioYaEsMejorPostorError,
   NoAutorizadoError,
+  OrdenPagoNoEncontradaError,
+  OrdenPagoNoPendienteError,
 } from '../errores/ErrorDeDominio';
 
 export interface DatosPublicacionSubasta {
@@ -29,8 +32,9 @@ export interface DatosPublicacionSubasta {
   fechaCierre: Date;
 }
 
-// Raíz del agregado: las pujas, los intentos rechazados y la orden de pago
-// solo se tocan a través de esta clase. El "ahora" siempre entra por parámetro.
+// Raíz del agregado y frontera de consistencia: las pujas, los intentos
+// rechazados y la orden de pago solo se tocan a través de esta clase. El
+// "ahora" siempre entra por parámetro, nunca se lee del sistema.
 export class Subasta {
   private estado: EstadoSubasta;
   private readonly pujas: Puja[] = [];
@@ -141,13 +145,18 @@ export class Subasta {
     return eventos;
   }
 
-  // Cierre perezoso: se llama antes de cualquier consulta o puja.
-  sincronizarCierre(ahora: Date): void {
+  // Evaluación perezosa del paso del tiempo (cierre y vencimiento del pago).
+  // Se llama antes de cualquier consulta, puja o notificación de pago, así
+  // que la subasta nunca responde con un estado desactualizado.
+  sincronizar(ahora: Date): void {
     if (this.estado.esAbierta() && this.periodo.yaVencio(ahora)) {
       this.cerrar(ahora);
     }
+    this.verificarVencimientoPago(ahora);
   }
 
+  // RN-13 a RN-16. Solo puede ejecutarse una vez: si la subasta ya no está
+  // abierta, el resultado registrado no se altera ni se genera otra orden.
   private cerrar(ahora: Date): void {
     if (!this.estado.esAbierta()) {
       return;
@@ -181,8 +190,62 @@ export class Subasta {
     });
   }
 
+  // RN-20: vencido el plazo sin confirmación, la orden vence y la subasta
+  // queda en incumplimiento.
+  private verificarVencimientoPago(ahora: Date): void {
+    if (!this.estado.esAdjudicada() || this.ordenPago === undefined) {
+      return;
+    }
+    if (this.ordenPago.vencerSiCorresponde(ahora)) {
+      this.estado = EstadoSubasta.incumplida();
+      this.eventosPendientes.push({
+        tipo: 'SUBASTA_INCUMPLIDA',
+        subastaId: this.id,
+        ordenPagoId: this.ordenPago.identificador,
+        ganadorId: this.ordenPago.idGanador,
+        vendedorId: this.vendedorId,
+      });
+    }
+  }
+
+  // RN-17: el resultado del cobro solo llega desde la pasarela externa. Un
+  // cobro aprobado confirma la orden y deja la subasta PAGADA; uno rechazado
+  // no cambia la orden, que sigue pendiente hasta su vencimiento.
+  registrarResultadoPago(ordenPagoId: string, resultado: ResultadoCobro, ahora: Date): void {
+    this.sincronizar(ahora);
+
+    const orden = this.ordenPago;
+    if (orden === undefined || orden.identificador !== ordenPagoId) {
+      throw new OrdenPagoNoEncontradaError();
+    }
+
+    if (resultado === 'RECHAZADO') {
+      if (!orden.estaPendiente()) {
+        throw new OrdenPagoNoPendienteError(orden.estadoActual);
+      }
+      this.eventosPendientes.push({
+        tipo: 'PAGO_RECHAZADO',
+        subastaId: this.id,
+        ordenPagoId: orden.identificador,
+        ganadorId: orden.idGanador,
+      });
+      return;
+    }
+
+    orden.confirmar();
+    this.estado = EstadoSubasta.pagada();
+    this.eventosPendientes.push({
+      tipo: 'PAGO_CONFIRMADO',
+      subastaId: this.id,
+      ordenPagoId: orden.identificador,
+      ganadorId: orden.idGanador,
+      vendedorId: this.vendedorId,
+      monto: orden.valor.valor,
+    });
+  }
+
   cancelar(vendedorId: string, ahora: Date): void {
-    this.sincronizarCierre(ahora);
+    this.sincronizar(ahora);
 
     if (this.vendedorId !== vendedorId) {
       throw new NoAutorizadoError('Solo el vendedor puede cancelar su propia subasta.');
@@ -195,10 +258,15 @@ export class Subasta {
     }
 
     this.estado = EstadoSubasta.cancelada();
+    this.eventosPendientes.push({
+      tipo: 'SUBASTA_CANCELADA',
+      subastaId: this.id,
+      vendedorId: this.vendedorId,
+    });
   }
 
   registrarPuja(postorId: string, monto: Dinero, ahora: Date): Puja {
-    this.sincronizarCierre(ahora);
+    this.sincronizar(ahora);
 
     try {
       this.validarPuja(postorId, monto);

@@ -84,3 +84,52 @@ describe('Notificacion.desdeEvento', () => {
     expect(notificacion.fechaGeneracion.getTime()).toBe(AHORA.getTime());
   });
 });
+
+describe('Notificacion.desdeEvento — pagos', () => {
+  test('un pago confirmado avisa al ganador y al vendedor', () => {
+    const avisos = Notificacion.desdeEvento(
+      {
+        tipo: 'PAGO_CONFIRMADO',
+        subastaId: 'subasta-1',
+        ordenPagoId: 'orden-1',
+        ganadorId: 'ganador-1',
+        vendedorId: 'vendedor-1',
+        monto: 150000,
+      },
+      idsSecuenciales(),
+      AHORA,
+    );
+
+    expect(avisos.map((a) => [a.idDestinatario, a.tipoNotificacion])).toEqual([
+      ['ganador-1', 'PAGO_CONFIRMADO_GANADOR'],
+      ['vendedor-1', 'PAGO_CONFIRMADO_VENDEDOR'],
+    ]);
+  });
+
+  test('una subasta incumplida avisa al ganador y al vendedor', () => {
+    const avisos = Notificacion.desdeEvento(
+      {
+        tipo: 'SUBASTA_INCUMPLIDA',
+        subastaId: 'subasta-1',
+        ordenPagoId: 'orden-1',
+        ganadorId: 'ganador-1',
+        vendedorId: 'vendedor-1',
+      },
+      idsSecuenciales(),
+      AHORA,
+    );
+
+    expect(avisos.map((a) => a.idDestinatario)).toEqual(['ganador-1', 'vendedor-1']);
+  });
+
+  test('un pago rechazado avisa solo al ganador', () => {
+    const avisos = Notificacion.desdeEvento(
+      { tipo: 'PAGO_RECHAZADO', subastaId: 'subasta-1', ordenPagoId: 'orden-1', ganadorId: 'ganador-1' },
+      idsSecuenciales(),
+      AHORA,
+    );
+
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0].tipoNotificacion).toBe('PAGO_RECHAZADO');
+  });
+});
