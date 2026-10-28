@@ -1,15 +1,28 @@
 openapi: 3.0.3
 info:
   title: Plataforma de Subastas en Línea — API
-  version: "1.0.0-entrega1"
-  description: >
-    API REST de la Entrega 1. Cubre la gestión de usuarios, la publicación y
-    consulta de subastas y el registro de pujas. La comunicación en tiempo real
-    y el webhook de pagos corresponden a entregas posteriores.
+  version: "2.0.0-entrega2"
+  description: |
+    API de la Entrega 2. Cubre la gestión de usuarios, la publicación y
+    consulta de subastas, el registro de pujas, el cierre y la adjudicación con
+    su orden de pago, y el webhook de la pasarela de pagos.
 
     Los valores monetarios son enteros no negativos en pesos colombianos. Las
     reglas de negocio se validan en el dominio: una puja rechazada por una regla
-    de negocio nunca responde con un código de éxito.
+    de negocio nunca responde con un código de éxito. Todos los errores tienen
+    la forma `{ "error": { "codigo", "mensaje" } }`.
+
+    **Tiempo real.** Además de esta API REST, el servidor expone WebSockets en
+    `ws://localhost:3000/ws?token=<JWT>` (el token es opcional). El cliente se
+    suscribe con `{"accion":"SUSCRIBIR","subastaId":"..."}` y recibe, sin
+    preguntar, las nuevas pujas, los avisos de puja superada, el cierre y el
+    resultado de la adjudicación. El contrato completo de mensajes está en
+    `docs/websockets.md` del repositorio.
+
+    **Cierre perezoso.** No hay un proceso en segundo plano: cada vez que una
+    subasta se consulta, se lista o recibe una puja, se verifica si su fecha de
+    cierre (o el plazo de su orden de pago) ya se cumplió y se aplica el cambio
+    en ese momento.
 servers:
   - url: http://localhost:3000
     description: Entorno local
@@ -20,6 +33,8 @@ tags:
   - name: Usuarios
   - name: Subastas
   - name: Pujas
+  - name: Órdenes de pago
+  - name: Webhooks
 
 paths:
   /salud:
@@ -223,6 +238,12 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Subasta"
+        "400":
+          description: El estado indicado en el filtro no existe (ESTADO_SUBASTA_INVALIDO)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       tags: [Subastas]
       summary: Publicar una subasta
@@ -393,6 +414,121 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /ordenes-pago:
+    get:
+      tags: [Órdenes de pago]
+      summary: Órdenes de pago del usuario autenticado como ganador
+      description: >
+        Cada adjudicación genera una orden de pago por el valor de la puja
+        ganadora, con un plazo de 48 horas. Si el plazo vence sin
+        confirmación, la orden queda VENCIDA y la subasta INCUMPLIDA.
+      responses:
+        "200":
+          description: Órdenes de pago del usuario
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrdenPagoDetalle"
+        "401":
+          $ref: "#/components/responses/NoAutenticado"
+
+  /ordenes-pago/{id}:
+    get:
+      tags: [Órdenes de pago]
+      summary: Detalle de una orden de pago
+      description: Solo pueden consultarla el ganador y el vendedor de la subasta.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Detalle de la orden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrdenPagoDetalle"
+        "401":
+          $ref: "#/components/responses/NoAutenticado"
+        "403":
+          description: Quien consulta no es el ganador ni el vendedor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/NoEncontrado"
+
+  /webhooks/pagos:
+    post:
+      tags: [Webhooks]
+      summary: Notificación de la pasarela con el resultado de un cobro
+      description: |
+        Endpoint que invoca la pasarela de pagos (no un usuario). El proceso es:
+
+        1. **Verificación de origen (RN-18).** La pasarela firma el cuerpo
+           exacto de la petición con HMAC-SHA256 usando el secreto compartido
+           `PASARELA_SECRETO`, y envía la firma en el encabezado
+           `X-Pasarela-Firma: sha256=<hex>`. Si la firma falta o no coincide,
+           se responde 401 y no cambia nada.
+        2. **Idempotencia (RN-19).** Si `idEvento` ya se procesó, se responde
+           200 con el mismo resultado de la primera vez
+           (`procesadoPreviamente: true`) sin volver a aplicar el cambio.
+        3. **Aplicación (RN-17).** `APROBADO` confirma la orden y deja la
+           subasta en `PAGADA`; `RECHAZADO` deja la orden pendiente hasta su
+           vencimiento.
+
+        Para simular la pasarela en local: `npm run pasarela -- <ordenPagoId> APROBADO`.
+      security: []
+      parameters:
+        - in: header
+          name: X-Pasarela-Firma
+          required: true
+          schema:
+            type: string
+            example: sha256=5d41402abc4b2a76b9719d911017c592...
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificacionPago"
+      responses:
+        "200":
+          description: Notificación procesada (o reconocida como repetida)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultadoNotificacionPago"
+        "400":
+          description: El cuerpo no cumple el contrato (NOTIFICACION_PAGO_MAL_FORMADA)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: No se pudo verificar el origen (RN18_NOTIFICACION_NO_VERIFICABLE)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: La orden de pago no existe (ORDEN_PAGO_NO_ENCONTRADA)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: La orden ya no está pendiente, por ejemplo porque venció (RN20_ORDEN_PAGO_NO_PENDIENTE)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   securitySchemes:
     tokenPortador:
@@ -483,6 +619,11 @@ components:
               SUBASTA_ADJUDICADA_GANADOR,
               SUBASTA_ADJUDICADA_VENDEDOR,
               SUBASTA_DESIERTA,
+              PAGO_CONFIRMADO_GANADOR,
+              PAGO_CONFIRMADO_VENDEDOR,
+              PAGO_RECHAZADO,
+              SUBASTA_INCUMPLIDA_GANADOR,
+              SUBASTA_INCUMPLIDA_VENDEDOR,
             ]
         subastaId:
           type: string
@@ -498,7 +639,11 @@ components:
 
     EstadoSubasta:
       type: string
-      enum: [ABIERTA, CANCELADA, ADJUDICADA, DESIERTA]
+      enum: [ABIERTA, CANCELADA, ADJUDICADA, DESIERTA, PAGADA, INCUMPLIDA]
+      description: >
+        ABIERTA → CANCELADA (sin pujas) | DESIERTA (cierre sin pujas) |
+        ADJUDICADA (cierre con pujas). ADJUDICADA → PAGADA (pago confirmado por
+        la pasarela) | INCUMPLIDA (orden vencida sin pago).
 
     Articulo:
       type: object
@@ -535,12 +680,76 @@ components:
           type: string
         monto:
           type: integer
+        fechaGeneracion:
+          type: string
+          format: date-time
         fechaLimite:
           type: string
           format: date-time
         estado:
+          $ref: "#/components/schemas/EstadoOrdenPago"
+
+    EstadoOrdenPago:
+      type: string
+      enum: [PENDIENTE, CONFIRMADA, VENCIDA]
+
+    OrdenPagoDetalle:
+      type: object
+      properties:
+        id:
           type: string
-          enum: [PENDIENTE, CONFIRMADA, VENCIDA]
+        subastaId:
+          type: string
+        articulo:
+          type: string
+          description: Denominación del artículo adjudicado
+        ganadorId:
+          type: string
+        vendedorId:
+          type: string
+        monto:
+          type: integer
+        fechaGeneracion:
+          type: string
+          format: date-time
+        fechaLimite:
+          type: string
+          format: date-time
+        estado:
+          $ref: "#/components/schemas/EstadoOrdenPago"
+        estadoSubasta:
+          $ref: "#/components/schemas/EstadoSubasta"
+
+    NotificacionPago:
+      type: object
+      required: [idEvento, ordenPagoId, resultado]
+      properties:
+        idEvento:
+          type: string
+          description: Identificador único del evento en la pasarela; base de la idempotencia
+          example: evt_0001
+        ordenPagoId:
+          type: string
+          example: 3f1c...-orden-pago
+        resultado:
+          type: string
+          enum: [APROBADO, RECHAZADO]
+
+    ResultadoNotificacionPago:
+      type: object
+      properties:
+        idEvento:
+          type: string
+        ordenPagoId:
+          type: string
+        resultado:
+          type: string
+          enum: [APROBADO, RECHAZADO]
+        estadoOrden:
+          $ref: "#/components/schemas/EstadoOrdenPago"
+        procesadoPreviamente:
+          type: boolean
+          description: true cuando el evento ya se había procesado y no se aplicó de nuevo
 
     Subasta:
       type: object
