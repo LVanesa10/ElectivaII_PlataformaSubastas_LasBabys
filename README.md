@@ -9,6 +9,7 @@ Equipo: LasBabys
 Integrantes:
 Laura Vanessa Vanegas Hoyos
 Sara Jaramillo Florez
+Luis Fernando Parra Rodriguez
 
 Descripción: API REST y de WebSockets para una plataforma de subastas en línea,
 construida con arquitectura hexagonal y diseño guiado por el dominio (DDD). Un
