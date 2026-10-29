@@ -1,13 +1,6 @@
 import { Categoria } from '../../../dominio/entidades/Categoria';
 import { CategoriaRepositorio } from '../../../aplicacion/puertos/CategoriaRepositorio';
-
-const CATEGORIAS_SEMILLA: Array<[string, string]> = [
-  ['electronica', 'Electrónica'],
-  ['hogar', 'Hogar y muebles'],
-  ['coleccionables', 'Coleccionables y arte'],
-  ['vehiculos', 'Vehículos y repuestos'],
-  ['deportes', 'Deportes y aire libre'],
-];
+import { CATEGORIAS_SEMILLA } from '../categoriasSemilla';
 
 export class CategoriaRepositorioMemoria implements CategoriaRepositorio {
   private readonly categoriasPorId = new Map<string, Categoria>();

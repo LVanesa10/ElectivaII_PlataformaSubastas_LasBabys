@@ -7,6 +7,8 @@ import {
   IncrementoMinimoInvalidoError,
   PrecioBaseInvalidoError,
   SubastaConPujasNoCancelableError,
+  OrdenPagoNoEncontradaError,
+  OrdenPagoNoPendienteError,
 } from '../../src/dominio/errores/ErrorDeDominio';
 
 const AHORA = new Date('2026-01-01T00:00:00.000Z');
@@ -160,7 +162,7 @@ describe('Cierre y adjudicación', () => {
     const fechaCierre = new Date(AHORA.getTime() + UNA_HORA_MS * 2);
     const subasta = publicarSubastaDePrueba({ fechaCierre });
 
-    subasta.sincronizarCierre(new Date(fechaCierre.getTime() + 1));
+    subasta.sincronizar(new Date(fechaCierre.getTime() + 1));
 
     expect(subasta.estadoActual.valor).toBe('DESIERTA');
     expect(subasta.ordenDePago).toBeUndefined();
@@ -174,7 +176,7 @@ describe('Cierre y adjudicación', () => {
     subasta.registrarPuja('postor-2', Dinero.pesos(150000), AHORA);
 
     const momentoCierre = new Date(fechaCierre.getTime() + 1);
-    subasta.sincronizarCierre(momentoCierre);
+    subasta.sincronizar(momentoCierre);
 
     expect(subasta.estadoActual.valor).toBe('ADJUDICADA');
     expect(subasta.mejorPostorActualId()).toBe('postor-2');
@@ -199,10 +201,10 @@ describe('Cierre y adjudicación', () => {
     subasta.registrarPuja('postor-1', Dinero.pesos(100000), AHORA);
 
     const momentoCierre = new Date(fechaCierre.getTime() + 1);
-    subasta.sincronizarCierre(momentoCierre);
+    subasta.sincronizar(momentoCierre);
     const ordenOriginal = subasta.ordenDePago;
 
-    subasta.sincronizarCierre(new Date(momentoCierre.getTime() + UN_DIA_MS));
+    subasta.sincronizar(new Date(momentoCierre.getTime() + UN_DIA_MS));
 
     expect(subasta.ordenDePago).toBe(ordenOriginal);
     expect(subasta.estadoActual.valor).toBe('ADJUDICADA');
@@ -244,6 +246,161 @@ describe('Eventos de dominio', () => {
     subasta.registrarPuja('postor-1', Dinero.pesos(100000), AHORA);
 
     subasta.extraerEventosPendientes();
+    expect(subasta.extraerEventosPendientes()).toHaveLength(0);
+  });
+});
+
+const CUARENTA_Y_OCHO_HORAS_MS = 48 * UNA_HORA_MS;
+
+function subastaAdjudicada(): { subasta: Subasta; momentoCierre: Date } {
+  const fechaCierre = new Date(AHORA.getTime() + UNA_HORA_MS * 2);
+  const subasta = publicarSubastaDePrueba({ fechaCierre, precioBase: 100000 });
+  subasta.registrarPuja('postor-1', Dinero.pesos(120000), AHORA);
+  const momentoCierre = new Date(fechaCierre.getTime() + 1);
+  subasta.sincronizar(momentoCierre);
+  subasta.extraerEventosPendientes();
+  return { subasta, momentoCierre };
+}
+
+describe('Orden de pago y resultado del cobro', () => {
+  test('la orden se genera por el valor ganador, a nombre del ganador y con plazo de 48 horas', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+    const orden = subasta.ordenDePago!;
+
+    expect(orden.idGanador).toBe('postor-1');
+    expect(orden.valor.valor).toBe(120000);
+    expect(orden.estadoActual).toBe('PENDIENTE');
+    expect(orden.fechaLimite.getTime() - momentoCierre.getTime()).toBe(CUARENTA_Y_OCHO_HORAS_MS);
+  });
+
+  test('un cobro aprobado confirma la orden y deja la subasta pagada', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+    const ordenId = subasta.ordenDePago!.identificador;
+
+    subasta.registrarResultadoPago(ordenId, 'APROBADO', momentoCierre);
+
+    expect(subasta.ordenDePago!.estadoActual).toBe('CONFIRMADA');
+    expect(subasta.estadoActual.valor).toBe('PAGADA');
+    expect(subasta.extraerEventosPendientes()).toContainEqual(
+      expect.objectContaining({ tipo: 'PAGO_CONFIRMADO', ordenPagoId: ordenId, monto: 120000 }),
+    );
+  });
+
+  test('un cobro rechazado no confirma la orden: sigue pendiente', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+
+    subasta.registrarResultadoPago(subasta.ordenDePago!.identificador, 'RECHAZADO', momentoCierre);
+
+    expect(subasta.ordenDePago!.estadoActual).toBe('PENDIENTE');
+    expect(subasta.estadoActual.valor).toBe('ADJUDICADA');
+    expect(subasta.extraerEventosPendientes()).toContainEqual(expect.objectContaining({ tipo: 'PAGO_RECHAZADO' }));
+  });
+
+  test('una orden confirmada no puede confirmarse de nuevo', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+    const ordenId = subasta.ordenDePago!.identificador;
+    subasta.registrarResultadoPago(ordenId, 'APROBADO', momentoCierre);
+
+    expect(() => subasta.registrarResultadoPago(ordenId, 'APROBADO', momentoCierre)).toThrow(
+      OrdenPagoNoPendienteError,
+    );
+  });
+
+  test('rechaza un resultado para una orden que no pertenece a la subasta', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+    expect(() => subasta.registrarResultadoPago('otra-orden', 'APROBADO', momentoCierre)).toThrow(
+      OrdenPagoNoEncontradaError,
+    );
+  });
+
+  test('una subasta sin adjudicar no tiene orden que pagar', () => {
+    const subasta = publicarSubastaDePrueba();
+    expect(() => subasta.registrarResultadoPago('subasta-1-orden-pago', 'APROBADO', AHORA)).toThrow(
+      OrdenPagoNoEncontradaError,
+    );
+  });
+});
+
+describe('Vencimiento de la orden de pago (RN-20)', () => {
+  test('sin confirmación dentro del plazo, la orden vence y la subasta queda incumplida', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+
+    subasta.sincronizar(new Date(momentoCierre.getTime() + CUARENTA_Y_OCHO_HORAS_MS + 1));
+
+    expect(subasta.ordenDePago!.estadoActual).toBe('VENCIDA');
+    expect(subasta.estadoActual.valor).toBe('INCUMPLIDA');
+    expect(subasta.extraerEventosPendientes()).toContainEqual(
+      expect.objectContaining({ tipo: 'SUBASTA_INCUMPLIDA', ganadorId: 'postor-1', vendedorId: 'vendedor-1' }),
+    );
+  });
+
+  test('justo en el límite del plazo la orden sigue pendiente', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+
+    subasta.sincronizar(new Date(momentoCierre.getTime() + CUARENTA_Y_OCHO_HORAS_MS));
+
+    expect(subasta.ordenDePago!.estadoActual).toBe('PENDIENTE');
+    expect(subasta.estadoActual.valor).toBe('ADJUDICADA');
+  });
+
+  test('un pago que llega después del vencimiento se rechaza y no cambia el resultado', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+    const tarde = new Date(momentoCierre.getTime() + CUARENTA_Y_OCHO_HORAS_MS + 1);
+
+    expect(() => subasta.registrarResultadoPago(subasta.ordenDePago!.identificador, 'APROBADO', tarde)).toThrow(
+      OrdenPagoNoPendienteError,
+    );
+    expect(subasta.estadoActual.valor).toBe('INCUMPLIDA');
+    expect(subasta.ordenDePago!.estadoActual).toBe('VENCIDA');
+  });
+
+  test('una orden pagada no vence', () => {
+    const { subasta, momentoCierre } = subastaAdjudicada();
+    subasta.registrarResultadoPago(subasta.ordenDePago!.identificador, 'APROBADO', momentoCierre);
+
+    subasta.sincronizar(new Date(momentoCierre.getTime() + 10 * CUARENTA_Y_OCHO_HORAS_MS));
+
+    expect(subasta.estadoActual.valor).toBe('PAGADA');
+    expect(subasta.ordenDePago!.estadoActual).toBe('CONFIRMADA');
+  });
+});
+
+describe('Cierre: eventos y unicidad', () => {
+  test('el cierre con pujas anuncia la adjudicación una sola vez', () => {
+    const fechaCierre = new Date(AHORA.getTime() + UNA_HORA_MS * 2);
+    const subasta = publicarSubastaDePrueba({ fechaCierre, precioBase: 100000 });
+    subasta.registrarPuja('postor-1', Dinero.pesos(100000), AHORA);
+    subasta.extraerEventosPendientes();
+
+    subasta.sincronizar(new Date(fechaCierre.getTime() + 1));
+    subasta.sincronizar(new Date(fechaCierre.getTime() + 2));
+
+    const adjudicaciones = subasta.extraerEventosPendientes().filter((e) => e.tipo === 'SUBASTA_ADJUDICADA');
+    expect(adjudicaciones).toHaveLength(1);
+  });
+
+  test('el cierre sin pujas anuncia que la subasta quedó desierta', () => {
+    const fechaCierre = new Date(AHORA.getTime() + UNA_HORA_MS * 2);
+    const subasta = publicarSubastaDePrueba({ fechaCierre });
+
+    subasta.sincronizar(fechaCierre);
+
+    expect(subasta.extraerEventosPendientes()).toEqual([
+      { tipo: 'SUBASTA_DESIERTA', subastaId: 'subasta-1', vendedorId: 'vendedor-1' },
+    ]);
+  });
+
+  test('la cancelación se anuncia como evento', () => {
+    const subasta = publicarSubastaDePrueba();
+    subasta.cancelar('vendedor-1', AHORA);
+    expect(subasta.extraerEventosPendientes()).toEqual([
+      { tipo: 'SUBASTA_CANCELADA', subastaId: 'subasta-1', vendedorId: 'vendedor-1' },
+    ]);
+  });
+
+  test('una puja rechazada no produce eventos de difusión', () => {
+    const subasta = publicarSubastaDePrueba({ precioBase: 100000 });
+    expect(() => subasta.registrarPuja('postor-1', Dinero.pesos(1), AHORA)).toThrow();
     expect(subasta.extraerEventosPendientes()).toHaveLength(0);
   });
 });

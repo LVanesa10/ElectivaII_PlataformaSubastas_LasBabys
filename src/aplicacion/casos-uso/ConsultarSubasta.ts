@@ -3,6 +3,7 @@ import { SubastaNoEncontradaError } from '../../dominio/errores/ErrorDeDominio';
 import { SubastaRepositorio } from '../puertos/SubastaRepositorio';
 import { Reloj } from '../puertos/Reloj';
 import { NotificadorDeEventos } from '../puertos/NotificadorDeEventos';
+import { persistirYAnunciar } from '../servicios/persistirYAnunciar';
 
 export class ConsultarSubasta {
   constructor(
@@ -17,14 +18,10 @@ export class ConsultarSubasta {
       throw new SubastaNoEncontradaError();
     }
 
-    // Cada consulta reevalúa si la fecha de cierre ya pasó.
-    subasta.sincronizarCierre(this.reloj.ahora());
+    // Cada consulta reevalúa si la fecha de cierre o el plazo de pago ya pasaron.
+    subasta.sincronizar(this.reloj.ahora());
 
-    for (const evento of subasta.extraerEventosPendientes()) {
-      this.notificador.publicar(evento);
-    }
-
-    await this.subastas.guardar(subasta);
+    await persistirYAnunciar(subasta, this.subastas, this.notificador);
     return subasta;
   }
 }

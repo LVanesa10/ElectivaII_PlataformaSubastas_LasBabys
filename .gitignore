@@ -7,3 +7,10 @@ dist/
 # se versiona el JavaScript generado).
 test/**/*.js
 test/**/*.js.map
+
+# Base de datos local de SQLite
+datos/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

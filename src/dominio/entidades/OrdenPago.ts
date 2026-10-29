@@ -1,16 +1,17 @@
 import { Dinero } from '../objetos-valor/Dinero';
+import { OrdenPagoNoPendienteError } from '../errores/ErrorDeDominio';
 
 export type EstadoOrdenPago = 'PENDIENTE' | 'CONFIRMADA' | 'VENCIDA';
 
 const PLAZO_PAGO_EN_HORAS = 48;
 
-// Se referencia desde la Subasta por id, no se embebe: su confirmación y su
-// vencimiento ocurren por eventos externos, aparte del ciclo de la subasta.
-// El dominio nunca marca el pago como exitoso por su cuenta; confirmar() solo
-// se llama desde el caso de uso que procesa una notificación ya verificada.
+// Entidad interna del agregado Subasta: nace con la adjudicación (RN-15) y
+// solo cambia a través de la raíz, que es quien decide qué le ocurre a la
+// subasta cuando la orden se confirma o vence. El dominio nunca la marca como
+// pagada por su cuenta (RN-17): confirmar() solo se alcanza desde
+// Subasta.registrarResultadoPago(), invocado por el caso de uso que procesa
+// una notificación de la pasarela ya verificada.
 export class OrdenPago {
-  private estado: EstadoOrdenPago;
-
   private constructor(
     private readonly id: string,
     private readonly subastaId: string,
@@ -18,9 +19,8 @@ export class OrdenPago {
     private readonly monto: Dinero,
     private readonly fechaGeneracion: Date,
     private readonly venceEn: Date,
-  ) {
-    this.estado = 'PENDIENTE';
-  }
+    private estado: EstadoOrdenPago,
+  ) {}
 
   static generar(datos: {
     id: string;
@@ -30,20 +30,47 @@ export class OrdenPago {
     generadaEn: Date;
   }): OrdenPago {
     const venceEn = new Date(datos.generadaEn.getTime() + PLAZO_PAGO_EN_HORAS * 60 * 60 * 1000);
-    return new OrdenPago(datos.id, datos.subastaId, datos.ganadorId, datos.monto, datos.generadaEn, venceEn);
+    return new OrdenPago(datos.id, datos.subastaId, datos.ganadorId, datos.monto, datos.generadaEn, venceEn, 'PENDIENTE');
+  }
+
+  static reconstruir(datos: {
+    id: string;
+    subastaId: string;
+    ganadorId: string;
+    monto: Dinero;
+    generadaEn: Date;
+    venceEn: Date;
+    estado: EstadoOrdenPago;
+  }): OrdenPago {
+    return new OrdenPago(
+      datos.id,
+      datos.subastaId,
+      datos.ganadorId,
+      datos.monto,
+      datos.generadaEn,
+      datos.venceEn,
+      datos.estado,
+    );
+  }
+
+  estaPendiente(): boolean {
+    return this.estado === 'PENDIENTE';
   }
 
   confirmar(): void {
-    if (this.estado !== 'PENDIENTE') {
-      return;
+    if (!this.estaPendiente()) {
+      throw new OrdenPagoNoPendienteError(this.estado);
     }
     this.estado = 'CONFIRMADA';
   }
 
-  marcarVencidaSi(ahora: Date): void {
-    if (this.estado === 'PENDIENTE' && ahora.getTime() > this.venceEn.getTime()) {
+  // RN-20: devuelve true solo en el instante en que la orden pasa a vencida.
+  vencerSiCorresponde(ahora: Date): boolean {
+    if (this.estaPendiente() && ahora.getTime() > this.venceEn.getTime()) {
       this.estado = 'VENCIDA';
+      return true;
     }
+    return false;
   }
 
   get identificador(): string {

@@ -25,6 +25,11 @@ const MAPEO_CODIGO_A_ESTADO_HTTP: Record<string, number> = {
   NO_AUTORIZADO: 403,
   ARTICULO_INVALIDO: 400,
   USUARIO_INVALIDO: 400,
+  ESTADO_SUBASTA_INVALIDO: 400,
+  ORDEN_PAGO_NO_ENCONTRADA: 404,
+  RN20_ORDEN_PAGO_NO_PENDIENTE: 409,
+  RN18_NOTIFICACION_NO_VERIFICABLE: 401,
+  NOTIFICACION_PAGO_MAL_FORMADA: 400,
 };
 
 export interface ErrorDeValidacionDeEntrada extends Error {
@@ -56,7 +61,15 @@ export function manejoErrores(error: unknown, _req: Request, res: Response, _nex
     return;
   }
 
-  console.error('[error-no-controlado]', error);
+  // Cuerpo JSON mal formado: lo detecta express.json() antes de llegar a la ruta.
+  if ((error as { type?: string })?.type === 'entity.parse.failed') {
+    res.status(400).json({
+      error: { codigo: 'ENTRADA_INVALIDA', mensaje: 'El cuerpo de la petición no es JSON válido.' },
+    });
+    return;
+  }
+
+  console.error(`[${new Date().toISOString()}] [error-no-controlado]`, error);
   res.status(500).json({
     error: {
       codigo: 'ERROR_INTERNO',

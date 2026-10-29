@@ -4,7 +4,12 @@ export type TipoNotificacion =
   | 'PUJA_SUPERADA'
   | 'SUBASTA_ADJUDICADA_GANADOR'
   | 'SUBASTA_ADJUDICADA_VENDEDOR'
-  | 'SUBASTA_DESIERTA';
+  | 'SUBASTA_DESIERTA'
+  | 'PAGO_CONFIRMADO_GANADOR'
+  | 'PAGO_CONFIRMADO_VENDEDOR'
+  | 'PAGO_RECHAZADO'
+  | 'SUBASTA_INCUMPLIDA_GANADOR'
+  | 'SUBASTA_INCUMPLIDA_VENDEDOR';
 
 // Aviso dirigido a un usuario concreto sobre un hecho relevante para él.
 //
@@ -96,7 +101,60 @@ export class Notificacion {
           }),
         ];
 
+      case 'PAGO_CONFIRMADO':
+        return [
+          Notificacion.generar({
+            id: generarId(),
+            destinatarioId: evento.ganadorId,
+            tipo: 'PAGO_CONFIRMADO_GANADOR',
+            subastaId: evento.subastaId,
+            mensaje: `La pasarela confirmó tu pago por ${evento.monto}.`,
+            generadaEn: ahora,
+          }),
+          Notificacion.generar({
+            id: generarId(),
+            destinatarioId: evento.vendedorId,
+            tipo: 'PAGO_CONFIRMADO_VENDEDOR',
+            subastaId: evento.subastaId,
+            mensaje: `El comprador pagó ${evento.monto} por tu subasta.`,
+            generadaEn: ahora,
+          }),
+        ];
+
+      case 'PAGO_RECHAZADO':
+        return [
+          Notificacion.generar({
+            id: generarId(),
+            destinatarioId: evento.ganadorId,
+            tipo: 'PAGO_RECHAZADO',
+            subastaId: evento.subastaId,
+            mensaje: 'La pasarela rechazó tu pago. Puedes intentarlo de nuevo antes de que venza la orden.',
+            generadaEn: ahora,
+          }),
+        ];
+
+      case 'SUBASTA_INCUMPLIDA':
+        return [
+          Notificacion.generar({
+            id: generarId(),
+            destinatarioId: evento.ganadorId,
+            tipo: 'SUBASTA_INCUMPLIDA_GANADOR',
+            subastaId: evento.subastaId,
+            mensaje: 'Tu orden de pago venció sin confirmación y la subasta quedó en incumplimiento.',
+            generadaEn: ahora,
+          }),
+          Notificacion.generar({
+            id: generarId(),
+            destinatarioId: evento.vendedorId,
+            tipo: 'SUBASTA_INCUMPLIDA_VENDEDOR',
+            subastaId: evento.subastaId,
+            mensaje: 'El ganador no pagó dentro del plazo y la subasta quedó en incumplimiento.',
+            generadaEn: ahora,
+          }),
+        ];
+
       case 'NUEVA_PUJA_VIGENTE':
+      case 'SUBASTA_CANCELADA':
         // Difusión general hacia todos los suscritos de la subasta, no un
         // aviso individual: no produce Notificacion.
         return [];
