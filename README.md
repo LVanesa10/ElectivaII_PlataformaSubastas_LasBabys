@@ -11,14 +11,15 @@ Laura Vanessa Vanegas Hoyos
 Sara Jaramillo Florez
 Luis Fernando Parra Rodriguez
 
-Descripción: API REST y de WebSockets para una plataforma de subastas en línea,
-construida con arquitectura hexagonal y diseño guiado por el dominio (DDD). Un
+Descripción: plataforma de subastas en línea con una API REST y de WebSockets,
+construida con arquitectura hexagonal y diseño guiado por el dominio (DDD), y
+una aplicación web que la consume. Un
 vendedor publica un artículo con precio base y fecha de cierre; los demás
 usuarios pujan y ven las ofertas en tiempo real hasta que la subasta cierra, se
 adjudica al mejor postor y se genera la orden de pago, que la pasarela externa
 confirma mediante un webhook.
 
-**Estado: Entrega 2 — API completa con comunicación en tiempo real.**
+**Estado: Entrega 3 — integración con la aplicación web.**
 
 Requerimientos:
 - Node.js 20 o superior (probado con Node 22)
@@ -29,6 +30,7 @@ Requerimientos:
 - JSON Web Tokens (`jsonwebtoken`) para autenticación
 - bcrypt (`bcryptjs`) para el cifrado de contraseñas
 - Jest y ts-jest para las pruebas
+- Aplicación web: Next.js, React y Tailwind CSS (carpeta `web/`)
 
 Licencia: No tiene
 
@@ -75,6 +77,20 @@ La base de datos SQLite se crea sola en `./datos/subastas.db` la primera vez
 (carpeta excluida del repositorio). Para empezar de cero basta con borrar esa
 carpeta.
 
+### Aplicación web
+
+Con la API en marcha, en **otra terminal**:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Abra <http://localhost:3001>. La aplicación usa el puerto 3001 para no chocar
+con la API (3000) y le reenvía las peticiones de `/api`. Los detalles están en
+[`web/README.md`](web/README.md).
+
 ### Variables de entorno
 
 | Variable           | Obligatoria | Por defecto           | Descripción |
@@ -100,7 +116,33 @@ npm test
 
 También puede verificarse el tipado completo con `npm run typecheck`.
 
-## Demostración del tiempo real (sustentación)
+## Demostración del ciclo completo (sustentación de la Entrega 3)
+
+La Entrega 3 se evalúa recorriendo el ciclo del negocio desde la aplicación web.
+Como una subasta dura al menos una hora (RN-03), publique la de la
+demostración con anticipación y fije su cierre unos minutos después de que
+empiece la clase.
+
+1. Arranque la API (`npm start`) y la aplicación web (`cd web && npm run dev`).
+2. Abra <http://localhost:3001> en tres ventanas privadas: vendedor y dos postores.
+3. El vendedor publica la subasta en **Publicar subasta**.
+4. Los dos postores abren su detalle: el indicador dice «Actualizando en tiempo
+   real · 3 conectados».
+5. Cada postor puja. La otra ventana muestra la nueva oferta sin recargar y el
+   superado ve el aviso «Tu puja fue superada». Una puja insuficiente muestra
+   el motivo y el código de la regla (por ejemplo `RN09_PUJA_INSUFICIENTE`).
+6. Al llegar la hora de cierre, la cuenta regresiva consulta la subasta, la API
+   la cierra y todas las ventanas muestran el resultado de la adjudicación.
+7. El ganador ve su orden de pago en **Mi perfil**. Para confirmar el pago se
+   simula la pasarela con el id de la orden:
+
+   ```bash
+   npm run pasarela -- <ordenPagoId> APROBADO evt-001
+   ```
+
+   La subasta pasa a **Pagada** en todas las ventanas abiertas.
+
+## Demostración del tiempo real desde la consola
 
 1. Arranque el servidor (`npm start`) y abra `http://localhost:3000/api-docs`.
 2. Registre tres usuarios (`POST /usuarios/registro`) e inicie sesión con cada
@@ -209,6 +251,10 @@ scripts/
 
 test/                            # Ver la sección «Pruebas».
 
+web/                             # Aplicación web (Next.js). Es otro adaptador de
+                                 # entrada: solo habla con la API por HTTP y
+                                 # WebSocket. Su estructura está en web/README.md.
+
 docs/
 ├── openapi.yaml                 # Especificación OpenAPI 3.0 (servida en /api-docs).
 └── websockets.md                # Contrato de la API de WebSockets.
@@ -226,6 +272,18 @@ docs/
 - Sustituirla no toca el dominio ni la aplicación (RNF-06): el adaptador en
   memoria de la Entrega 1 sigue disponible con `PERSISTENCIA=memoria`, y el
   cambio se decide únicamente en `src/infraestructura/contenedor.ts`.
+
+### Aplicación web: por qué Next.js (RNF-11)
+
+- Organiza la aplicación por páginas, una por requisito funcional (listado,
+  detalle, publicar, perfil, inicio de sesión y registro).
+- Reenvía `/api` a la API, de modo que el navegador habla con un solo origen y
+  la API no necesita CORS.
+- React maneja bien el estado que cambia en tiempo real, como la oferta vigente
+  que llega por WebSocket.
+- La aplicación web no contiene reglas de negocio: solo revisa el formato de
+  los formularios. Lo que decide si una puja o una publicación procede es el
+  dominio, y la pantalla muestra el error que devuelve la API (RF-25).
 
 ### Consistencia de las pujas
 
@@ -386,8 +444,3 @@ adaptadores independientes:
 destinatario concreto. Una subasta adjudicada genera dos (ganador y vendedor),
 una puja superada genera uno (para el superado) y una nueva puja vigente
 ninguno, porque es información pública que ya llega por difusión.
-
-## Qué queda para la siguiente entrega
-
-- Aplicación web cliente que consuma la API, conserve la sesión y se actualice
-  en tiempo real con la conexión de WebSocket.
