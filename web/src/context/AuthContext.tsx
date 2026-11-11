@@ -1,14 +1,20 @@
-
 "use client";
 
 import {
   createContext,
   useContext,
   useEffect,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { authApi, type RespuestaLogin } from "@/lib/api";
+import { authApi, usuariosApi, type RespuestaLogin } from "@/lib/api";
+import {
+  cerrarSesionGuardada,
+  guardarSesion,
+  leerSesion,
+  suscribirseASesion,
+  type Sesion,
+} from "@/lib/sesion";
 
 interface AuthContextType {
   usuario: { id: string; nombre: string } | null;
@@ -20,53 +26,43 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// En el servidor no hay localStorage: la sesión se conoce al hidratar.
+const SIN_LEER = undefined;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [usuario, setUsuario] = useState<AuthContextType["usuario"]>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [cargando, setCargando] = useState(true);
+  const sesion: Sesion | null | typeof SIN_LEER = useSyncExternalStore(
+    suscribirseASesion,
+    leerSesion,
+    () => SIN_LEER,
+  );
 
+  // Un token guardado puede haber vencido: se comprueba una vez contra la
+  // API. Si responde 401, el cliente de la API cierra la sesión.
+  const tokenGuardado = sesion?.token;
   useEffect(() => {
-    const tokenGuardado = localStorage.getItem("lasbabys_token");
-    const usuarioGuardado = localStorage.getItem("lasbabys_usuario");
-
-    if (tokenGuardado && usuarioGuardado) {
-      try {
-        setToken(tokenGuardado);
-        setUsuario(JSON.parse(usuarioGuardado));
-      } catch {
-        localStorage.removeItem("lasbabys_token");
-        localStorage.removeItem("lasbabys_usuario");
-      }
+    if (tokenGuardado) {
+      usuariosApi.perfil(tokenGuardado).catch(() => undefined);
     }
-
-    setCargando(false);
-  }, []);
+  }, [tokenGuardado]);
 
   async function iniciarSesion(correo: string, contrasena: string) {
     const respuesta: RespuestaLogin = await authApi.login(correo, contrasena);
 
-    const datosUsuario = {
-      id: respuesta.usuarioId,
-      nombre: respuesta.nombre,
-    };
-
-    localStorage.setItem("lasbabys_token", respuesta.token);
-    localStorage.setItem("lasbabys_usuario", JSON.stringify(datosUsuario));
-
-    setToken(respuesta.token);
-    setUsuario(datosUsuario);
-  }
-
-  function cerrarSesion() {
-    localStorage.removeItem("lasbabys_token");
-    localStorage.removeItem("lasbabys_usuario");
-    setToken(null);
-    setUsuario(null);
+    guardarSesion({
+      token: respuesta.token,
+      usuario: { id: respuesta.usuarioId, nombre: respuesta.nombre },
+    });
   }
 
   return (
     <AuthContext.Provider
-      value={{ usuario, token, cargando, iniciarSesion, cerrarSesion }}
+      value={{
+        usuario: sesion?.usuario ?? null,
+        token: sesion?.token ?? null,
+        cargando: sesion === SIN_LEER,
+        iniciarSesion,
+        cerrarSesion: cerrarSesionGuardada,
+      }}
     >
       {children}
     </AuthContext.Provider>

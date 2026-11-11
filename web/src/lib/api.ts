@@ -1,3 +1,4 @@
+import { cerrarSesionGuardada } from "./sesion";
 
 const API_URL = "/api";
 
@@ -33,20 +34,34 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const { token, headers, ...requestOptions } = options;
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...requestOptions,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${endpoint}`, {
+      ...requestOptions,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiException(
+      "No fue posible conectar con el servidor. Verifica que la API esté en marcha.",
+      0,
+      "SIN_CONEXION",
+    );
+  }
 
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
     const error = data as ApiError | null;
+
+    // Un token vencido o inválido cierra la sesión guardada (RF-21).
+    if (response.status === 401 && token) {
+      cerrarSesionGuardada();
+    }
 
     throw new ApiException(
       error?.error?.mensaje ?? "Ocurrió un error al comunicarse con el servidor.",
@@ -76,6 +91,37 @@ export interface Categoria {
   nombre: string;
 }
 
+export type EstadoSubasta =
+  | "ABIERTA"
+  | "CANCELADA"
+  | "ADJUDICADA"
+  | "DESIERTA"
+  | "PAGADA"
+  | "INCUMPLIDA";
+
+export type EstadoConservacion =
+  | "NUEVO"
+  | "COMO_NUEVO"
+  | "BUEN_ESTADO"
+  | "ACEPTABLE"
+  | "PARA_REPARAR";
+
+export interface Puja {
+  id: string;
+  postorId: string;
+  monto: number;
+  fecha: string;
+}
+
+export interface OrdenPagoDeSubasta {
+  id: string;
+  ganadorId: string;
+  monto: number;
+  fechaGeneracion: string;
+  fechaLimite: string;
+  estado: "PENDIENTE" | "CONFIRMADA" | "VENCIDA";
+}
+
 export interface Subasta {
   id: string;
   vendedorId: string;
@@ -89,10 +135,52 @@ export interface Subasta {
   incrementoMinimo: number;
   fechaPublicacion: string;
   fechaCierre: string;
-  estado: "ABIERTA" | "CANCELADA" | "ADJUDICADA" | "DESIERTA" | "PAGADA" | "INCUMPLIDA";
+  estado: EstadoSubasta;
   ofertaVigente: number | null;
   mejorPostorId: string | null;
   cantidadPujas: number;
+  ordenPago: OrdenPagoDeSubasta | null;
+}
+
+export interface SubastaDetalle extends Subasta {
+  historialPujas: Puja[];
+}
+
+export interface DatosPublicacion {
+  denominacion: string;
+  descripcion: string;
+  estadoConservacion: EstadoConservacion;
+  categoriaId: string;
+  precioBase: number;
+  incrementoMinimo: number;
+  fechaCierre: string;
+}
+
+export interface Perfil {
+  usuario: Usuario;
+  subastasPublicadas: Subasta[];
+  subastasConParticipacion: Subasta[];
+}
+
+export interface Notificacion {
+  id: string;
+  tipo: string;
+  subastaId: string;
+  mensaje: string;
+  fecha: string;
+}
+
+export interface OrdenPago {
+  id: string;
+  subastaId: string;
+  articulo: string;
+  ganadorId: string;
+  vendedorId: string;
+  monto: number;
+  fechaGeneracion: string;
+  fechaLimite: string;
+  estado: "PENDIENTE" | "CONFIRMADA" | "VENCIDA";
+  estadoSubasta: EstadoSubasta;
 }
 
 export interface RespuestaSubastas {
@@ -121,16 +209,38 @@ export const subastasApi = {
     ),
 
   detalle: (id: string) =>
-    apiRequest<Subasta & { historialPujas: unknown[] }>(
-      `/subastas/${encodeURIComponent(id)}`,
-    ),
+    apiRequest<SubastaDetalle>(`/subastas/${encodeURIComponent(id)}`),
 
   ofertar: (id: string, monto: number, token: string) =>
-    apiRequest<unknown>(`/subastas/${encodeURIComponent(id)}/pujas`, {
+    apiRequest<Puja>(`/subastas/${encodeURIComponent(id)}/pujas`, {
       method: "POST",
       token,
       body: JSON.stringify({ monto }),
     }),
+
+  publicar: (datos: DatosPublicacion, token: string) =>
+    apiRequest<Subasta>("/subastas", {
+      method: "POST",
+      token,
+      body: JSON.stringify(datos),
+    }),
+
+  cancelar: (id: string, token: string) =>
+    apiRequest<null>(`/subastas/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      token,
+    }),
+};
+
+export const usuariosApi = {
+  perfil: (token: string) => apiRequest<Perfil>("/usuarios/perfil", { token }),
+
+  notificaciones: (token: string) =>
+    apiRequest<Notificacion[]>("/usuarios/notificaciones", { token }),
+};
+
+export const ordenesPagoApi = {
+  listarMias: (token: string) => apiRequest<OrdenPago[]>("/ordenes-pago", { token }),
 };
 
 export const categoriasApi = {
