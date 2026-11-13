@@ -1,8 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f8fc;
+  --foreground: #29152f;
+  --brand-plum: #29152f;
+  --brand-pink: #d9468d;
+  --brand-coral: #ff8a76;
+  --brand-blush: #ffb3c7;
+  --brand-soft: #fff0f5;
 }
 
 @theme inline {
@@ -12,15 +17,19 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+button, input, textarea, select { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+::selection { background: #ffb3c7; color: #29152f; }
+
+.brand-surface {
+  background-image: radial-gradient(circle at 82% 18%, rgba(217,70,141,.28), transparent 28%), radial-gradient(circle at 65% 100%, rgba(255,138,118,.18), transparent 34%), linear-gradient(120deg, #29152f 0%, #3b1b40 58%, #29152f 100%);
+}
+.brand-glow { box-shadow: 0 24px 70px rgba(41,21,47,.18); }
+.soft-card { border: 1px solid rgba(41,21,47,.08); background: rgba(255,255,255,.94); box-shadow: 0 12px 35px rgba(41,21,47,.055); }
