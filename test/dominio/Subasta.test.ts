@@ -70,6 +70,39 @@ describe('Publicación de subastas', () => {
     ).toThrow(DuracionSubastaInvalidaError);
   });
 
+  test('con una duración mínima de demostración acepta subastas cortas', () => {
+    const subasta = Subasta.publicar(
+      {
+        id: 'subasta-demo',
+        vendedorId: 'vendedor-1',
+        articulo: articuloDePrueba(),
+        precioBase: Dinero.pesos(100000),
+        incrementoMinimo: Dinero.pesos(10000),
+        fechaCierre: new Date(AHORA.getTime() + 2 * 60 * 1000),
+      },
+      AHORA,
+      2 * 60 * 1000,
+    );
+    expect(subasta.estadoActual.esAbierta()).toBe(true);
+  });
+
+  test('con una duración mínima de demostración sigue rechazando lo que no la alcanza', () => {
+    expect(() =>
+      Subasta.publicar(
+        {
+          id: 'subasta-demo',
+          vendedorId: 'vendedor-1',
+          articulo: articuloDePrueba(),
+          precioBase: Dinero.pesos(100000),
+          incrementoMinimo: Dinero.pesos(10000),
+          fechaCierre: new Date(AHORA.getTime() + 60 * 1000),
+        },
+        AHORA,
+        2 * 60 * 1000,
+      ),
+    ).toThrow('La duración de la subasta debe estar entre 2 minuto(s) y 30 día(s).');
+  });
+
   test('rechaza una duración mayor a treinta días', () => {
     expect(() =>
       publicarSubastaDePrueba({ fechaCierre: new Date(AHORA.getTime() + 30 * UN_DIA_MS + 1) }),

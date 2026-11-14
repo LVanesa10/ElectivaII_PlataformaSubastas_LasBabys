@@ -100,6 +100,7 @@ con la API (3000) y le reenvía las peticiones de `/api`. Los detalles están en
 | `PERSISTENCIA`     | No          | `sqlite`              | `sqlite` o `memoria` |
 | `RUTA_BASE_DATOS`  | No          | `./datos/subastas.db` | Archivo de SQLite |
 | `PASARELA_SECRETO` | Para el webhook | —                 | Secreto compartido con la pasarela para firmar las notificaciones de pago. Si está vacío, toda notificación se rechaza |
+| `DURACION_MINIMA_MINUTOS` | No   | `60`                  | Duración mínima de una subasta. RN-03 exige 60 (una hora); solo se reduce, por ejemplo a `2`, para demostrar el cierre en vivo. El servidor avisa al arrancar si no es 60 |
 
 ## Pruebas
 
@@ -121,7 +122,10 @@ También puede verificarse el tipado completo con `npm run typecheck`.
 La Entrega 3 se evalúa recorriendo el ciclo del negocio desde la aplicación web.
 Como una subasta dura al menos una hora (RN-03), publique la de la
 demostración con anticipación y fije su cierre unos minutos después de que
-empiece la clase.
+empiece la clase. Si se prefiere ver el cierre de inmediato, puede ponerse
+`DURACION_MINIMA_MINUTOS=2` en el `.env` solo durante la demostración: la regla
+sigue validándose en el dominio, con un mínimo de dos minutos en lugar de una
+hora.
 
 1. Arranque la API (`npm start`) y la aplicación web (`cd web && npm run dev`).
 2. Abra <http://localhost:3001> en tres ventanas privadas: vendedor y dos postores.
@@ -349,7 +353,7 @@ el error hasta el punto exacto donde se aplica.
 | Regla | Dónde se aplica |
 |-------|-----------------|
 | RN-01 | `Subasta.publicar()` — validación de precio base e incremento |
-| RN-02, RN-03 | `PeriodoSubasta.crear()` — fecha de cierre y duración |
+| RN-02, RN-03 | `PeriodoSubasta.crear()` — fecha de cierre y duración (mínimo una hora por defecto) |
 | RN-04, RN-05 | `Subasta.cancelar()` |
 | RN-06 | `Subasta.validarPuja()` — estado abierto |
 | RN-07 | `Subasta.validarPuja()` — vendedor no puede pujar |

@@ -114,7 +114,13 @@ export function construirContenedor(configuracion: Configuracion, reloj: Reloj =
     new ConsultarNotificaciones(repositorios.usuarios, repositorios.notificaciones),
   );
   const subastas = new SubastasController(
-    new PublicarSubasta(repositorios.subastas, repositorios.usuarios, repositorios.categorias, reloj),
+    new PublicarSubasta(
+      repositorios.subastas,
+      repositorios.usuarios,
+      repositorios.categorias,
+      reloj,
+      configuracion.duracionMinimaMinutos * 60 * 1000,
+    ),
     new ListarSubastas(repositorios.subastas, reloj, notificador),
     consultarSubasta,
     new CancelarSubasta(repositorios.subastas, reloj, notificador),

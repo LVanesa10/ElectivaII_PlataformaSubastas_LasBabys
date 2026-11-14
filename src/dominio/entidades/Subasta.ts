@@ -53,14 +53,14 @@ export class Subasta {
     this.estado = EstadoSubasta.abierta();
   }
 
-  static publicar(datos: DatosPublicacionSubasta, ahora: Date): Subasta {
+  static publicar(datos: DatosPublicacionSubasta, ahora: Date, duracionMinimaMs?: number): Subasta {
     if (datos.precioBase.valor <= 0) {
       throw new PrecioBaseInvalidoError();
     }
     if (datos.incrementoMinimo.valor <= 0) {
       throw new IncrementoMinimoInvalidoError();
     }
-    const periodo = PeriodoSubasta.crear(ahora, datos.fechaCierre);
+    const periodo = PeriodoSubasta.crear(ahora, datos.fechaCierre, duracionMinimaMs);
 
     return new Subasta(datos.id, datos.vendedorId, datos.articulo, datos.precioBase, datos.incrementoMinimo, periodo);
   }

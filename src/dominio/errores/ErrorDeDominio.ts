@@ -33,8 +33,10 @@ export class FechaCierreAnteriorAPublicacionError extends ErrorDeDominio {
 
 export class DuracionSubastaInvalidaError extends ErrorDeDominio {
   readonly codigo = 'RN03_DURACION_INVALIDA';
-  constructor(minimoHoras: number, maximoDias: number) {
-    super(`La duración de la subasta debe estar entre ${minimoHoras} hora(s) y ${maximoDias} día(s).`);
+  constructor(minimoMinutos: number, maximoDias: number) {
+    const minimo =
+      minimoMinutos % 60 === 0 ? `${minimoMinutos / 60} hora(s)` : `${minimoMinutos} minuto(s)`;
+    super(`La duración de la subasta debe estar entre ${minimo} y ${maximoDias} día(s).`);
   }
 }
 
