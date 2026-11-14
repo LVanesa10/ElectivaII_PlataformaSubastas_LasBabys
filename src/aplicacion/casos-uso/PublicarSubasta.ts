@@ -24,6 +24,8 @@ export class PublicarSubasta {
     private readonly usuarios: UsuarioRepositorio,
     private readonly categorias: CategoriaRepositorio,
     private readonly reloj: Reloj,
+    // Sin valor se aplica la duración mínima de RN-03 (una hora).
+    private readonly duracionMinimaMs?: number,
   ) {}
 
   async ejecutar(datos: DatosPublicarSubasta): Promise<Subasta> {
@@ -54,6 +56,7 @@ export class PublicarSubasta {
         fechaCierre: datos.fechaCierre,
       },
       this.reloj.ahora(),
+      this.duracionMinimaMs,
     );
 
     await this.subastas.guardar(subasta);

@@ -267,7 +267,7 @@ export class SubastaRepositorioSqlite implements SubastaRepositorio {
       }),
       precioBase: Dinero.pesos(fila.precio_base),
       incrementoMinimo: Dinero.pesos(fila.incremento_minimo),
-      periodo: PeriodoSubasta.crear(new Date(fila.fecha_publicacion), new Date(fila.fecha_cierre)),
+      periodo: PeriodoSubasta.reconstruir(new Date(fila.fecha_publicacion), new Date(fila.fecha_cierre)),
       estado: EstadoSubasta.desdeNombre(fila.estado),
       pujas,
       intentosRechazados: intentos,

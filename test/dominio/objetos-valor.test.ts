@@ -2,6 +2,7 @@ import { Dinero } from '../../src/dominio/objetos-valor/Dinero';
 import { Email } from '../../src/dominio/objetos-valor/Email';
 import { Articulo } from '../../src/dominio/objetos-valor/Articulo';
 import { EstadoSubasta } from '../../src/dominio/objetos-valor/EstadoSubasta';
+import { PeriodoSubasta } from '../../src/dominio/objetos-valor/PeriodoSubasta';
 import { Usuario } from '../../src/dominio/entidades/Usuario';
 import {
   MontoMonetarioInvalidoError,
@@ -71,5 +72,20 @@ describe('EstadoSubasta', () => {
 
   test('rechaza un nombre de estado desconocido', () => {
     expect(() => EstadoSubasta.desdeNombre('VENDIDA')).toThrow(EstadoSubastaInvalidoError);
+  });
+});
+
+describe('PeriodoSubasta', () => {
+  const PUBLICADA = new Date('2026-01-01T00:00:00.000Z');
+
+  test('por defecto exige al menos una hora (RN-03)', () => {
+    expect(() => PeriodoSubasta.crear(PUBLICADA, new Date(PUBLICADA.getTime() + 59 * 60 * 1000))).toThrow(
+      'La duración de la subasta debe estar entre 1 hora(s) y 30 día(s).',
+    );
+  });
+
+  test('reconstruir no vuelve a validar un periodo ya guardado', () => {
+    const corto = PeriodoSubasta.reconstruir(PUBLICADA, new Date(PUBLICADA.getTime() + 2 * 60 * 1000));
+    expect(corto.fechaCierre.getTime() - corto.fechaPublicacion.getTime()).toBe(2 * 60 * 1000);
   });
 });

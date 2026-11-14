@@ -88,6 +88,7 @@ describe('Flujo completo: REST + WebSockets + webhook', () => {
         persistencia: 'sqlite',
         rutaBaseDatos: ':memory:',
         pasarelaSecreto: SECRETO_PASARELA,
+        duracionMinimaMinutos: 60,
       },
       reloj,
     );

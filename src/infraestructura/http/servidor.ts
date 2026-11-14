@@ -15,6 +15,12 @@ servidorHttp.listen(configuracion.puerto, () => {
   console.log(`WebSockets en ws://localhost:${configuracion.puerto}${RUTA_WEBSOCKET}`);
   console.log(`Documentación en http://localhost:${configuracion.puerto}/api-docs`);
   console.log(`Persistencia: ${configuracion.persistencia}`);
+  if (configuracion.duracionMinimaMinutos !== 60) {
+    console.warn(
+      `[aviso] Duración mínima de subasta: ${configuracion.duracionMinimaMinutos} min ` +
+        '(modo demostración; RN-03 exige 60).',
+    );
+  }
 });
 
 process.on('unhandledRejection', (motivo) => {
